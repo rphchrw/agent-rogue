@@ -13,7 +13,12 @@ const NEXT_PHASE: Record<Phase, Phase> = {
 const sanitizeCount = (count: number): number =>
   Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
 
-const removeFirstMatchingCard = (hand: readonly Card[], cardId: string) => {
+const createLogEntry = (text: string) => ({ ts: Date.now(), text });
+
+const removeFirstMatchingCard = (
+  hand: readonly Card[],
+  cardId: string,
+): { removed?: Card; remaining: Card[] } => {
   let removed: Card | undefined;
   const remaining: Card[] = [];
 
@@ -26,6 +31,24 @@ const removeFirstMatchingCard = (hand: readonly Card[], cardId: string) => {
   }
 
   return { removed, remaining };
+};
+
+const refillDeckIfNeeded = (
+  deck: Card[],
+  discardPile: Card[],
+  seed: number,
+): { deck: Card[]; discardPile: Card[]; seed: number } => {
+  if (deck.length > 0 || discardPile.length === 0) {
+    return { deck, discardPile, seed };
+  }
+
+  const { items, seed: nextSeed } = shuffle(discardPile, seed);
+
+  return {
+    deck: [...items],
+    discardPile: [],
+    seed: nextSeed,
+  };
 };
 
 const enterDrawPhase = (state: GameState): GameState => {
@@ -51,10 +74,7 @@ export function initGame(seed: number): GameState {
     clients: [],
     activeProperty: undefined,
     log: [
-      {
-        ts: Date.now(),
-        text: 'Welcome to Agent Rogue.',
-      },
+      createLogEntry('Welcome to Agent Rogue.'),
     ],
   };
 }
@@ -65,10 +85,7 @@ export function appendLog(state: GameState, text: string): GameState {
     ...state,
     log: [
       ...state.log,
-      {
-        ts: Date.now(),
-        text,
-      },
+      createLogEntry(text),
     ],
   };
 }
@@ -84,19 +101,11 @@ export function draw(state: GameState, count: number): GameState {
   let remaining = desired;
   let deck = [...state.deck];
   let discardPile = [...state.discard];
-  const hand = [...state.hand];
   let seed = state.seed;
+  const drawnCards: Card[] = [];
 
   while (remaining > 0) {
-    if (deck.length === 0) {
-      if (discardPile.length === 0) {
-        break;
-      }
-      const { items, seed: updatedSeed } = shuffle(discardPile, seed);
-      deck = [...items];
-      discardPile = [];
-      seed = updatedSeed;
-    }
+    ({ deck, discardPile, seed } = refillDeckIfNeeded(deck, discardPile, seed));
 
     if (deck.length === 0) {
       break;
@@ -104,7 +113,7 @@ export function draw(state: GameState, count: number): GameState {
 
     const [nextCard, ...restDeck] = deck;
     deck = restDeck;
-    hand.push(nextCard);
+    drawnCards.push(nextCard);
     remaining -= 1;
   }
 
@@ -112,7 +121,7 @@ export function draw(state: GameState, count: number): GameState {
     ...state,
     deck,
     discard: discardPile,
-    hand,
+    hand: [...state.hand, ...drawnCards],
     seed,
   };
 }
