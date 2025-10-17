@@ -62,8 +62,6 @@ const Game = () => {
   }
 
   const handleNextDay = () => {
-    let triggeredEvent: GameEvent | null = null
-
     setState(current => {
       let nextDay = current.day + 1
       let nextWeek = current.week
@@ -81,22 +79,19 @@ const Game = () => {
         error: undefined,
       }
 
-      if (updated.day !== 1 && rngRef.current) {
-        const roll = rngRef.current()
+      const rng = rngRef.current
+      if (updated.day !== 1 && rng) {
+        const roll = rng()
         if (roll < 0.35) {
-          const event = pickEvent(updated, rngRef.current)
+          const event = pickEvent(updated, rng)
           if (event) {
-            triggeredEvent = event
+            setPendingEvent(event)
           }
         }
       }
 
       return updated
     })
-
-    if (triggeredEvent) {
-      setPendingEvent(triggeredEvent)
-    }
   }
 
   const handleEventChoice = (choiceId: string) => {
