@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { applyAction, type GameAction, type GameState } from './core/engine'
+import { pickEvent, type GameEvent } from './core/events'
+import EventModal from './ui/EventModal'
+import { createRng } from './core/rng'
 
 const initialState: GameState = {
   day: 1,
@@ -47,12 +50,20 @@ const actions: { id: GameAction; label: string }[] = [
 
 const Game = () => {
   const [state, setState] = useState<GameState>(initialState)
+  const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(null)
+  const rngRef = useRef<(() => number) | null>(null)
+
+  if (!rngRef.current) {
+    rngRef.current = createRng(Date.now())
+  }
 
   const handleAction = (action: GameAction) => {
     setState(current => applyAction(current, action))
   }
 
   const handleNextDay = () => {
+    let triggeredEvent: GameEvent | null = null
+
     setState(current => {
       let nextDay = current.day + 1
       let nextWeek = current.week
@@ -62,13 +73,46 @@ const Game = () => {
         nextWeek += 1
       }
 
-      return {
+      const updated: GameState = {
         ...current,
         day: nextDay,
         week: nextWeek,
         energy: current.maxEnergy,
         error: undefined,
       }
+
+      if (updated.day !== 1 && rngRef.current) {
+        const roll = rngRef.current()
+        if (roll < 0.35) {
+          const event = pickEvent(updated, rngRef.current)
+          if (event) {
+            triggeredEvent = event
+          }
+        }
+      }
+
+      return updated
+    })
+
+    if (triggeredEvent) {
+      setPendingEvent(triggeredEvent)
+    }
+  }
+
+  const handleEventChoice = (choiceId: string) => {
+    const event = pendingEvent
+    if (!event) {
+      return
+    }
+
+    setPendingEvent(null)
+    setState(current => {
+      const choice = event.choices.find(c => c.id === choiceId)
+      if (!choice) {
+        return current
+      }
+
+      return choice.apply(current)
     })
   }
 
@@ -96,15 +140,25 @@ const Game = () => {
             type="button"
             style={buttonStyle}
             onClick={() => handleAction(action.id)}
+            disabled={Boolean(pendingEvent)}
           >
             {action.label}
           </button>
         ))}
       </div>
 
-      <button type="button" style={buttonStyle} onClick={handleNextDay}>
+      <button
+        type="button"
+        style={buttonStyle}
+        onClick={handleNextDay}
+        disabled={Boolean(pendingEvent)}
+      >
         Next Day
       </button>
+
+      {pendingEvent ? (
+        <EventModal event={pendingEvent} onChoose={handleEventChoice} />
+      ) : null}
     </div>
   )
 }
