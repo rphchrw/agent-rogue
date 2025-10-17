@@ -1,18 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { pickEvent, EVENTS } from '../src/core/events'
-import type { GameState } from '../src/core/engine'
+import { advanceDay, createInitialState, type GameState } from '../src/core/engine'
 import { next, seedRng, type RngState } from '../src/core/rng'
 
-const baseState: GameState = {
-  day: 1,
-  week: 1,
-  energy: 6,
-  maxEnergy: 6,
-  morale: 5,
-  skill: 0,
-  money: 10,
-}
+const baseState: GameState = createInitialState()
 
 describe('events', () => {
   it('pickEvent respects weight ordering', () => {
@@ -70,20 +62,7 @@ describe('events', () => {
       const events: string[] = []
 
       for (let i = 0; i < 7; i += 1) {
-        let nextDay = state.day + 1
-        let nextWeek = state.week
-        if (nextDay > 7) {
-          nextDay = 1
-          nextWeek += 1
-        }
-
-        state = {
-          ...state,
-          day: nextDay,
-          week: nextWeek,
-          energy: state.maxEnergy,
-          error: undefined,
-        }
+        state = advanceDay(state)
 
         if (state.day !== 1) {
           const roll = rng()

@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyAction, type GameState } from '../src/core/engine'
+import { applyAction, createInitialState, type GameState } from '../src/core/engine'
 
-const createState = (overrides: Partial<GameState> = {}): GameState => ({
-  day: 1,
-  week: 1,
-  energy: 6,
-  maxEnergy: 6,
-  morale: 5,
-  skill: 0,
-  money: 10,
-  ...overrides,
-})
+const createState = (overrides: Partial<GameState> = {}): GameState => {
+  const base = createInitialState()
+  return {
+    ...base,
+    ...overrides,
+    meta: {
+      ...base.meta,
+      ...overrides.meta,
+      loss: {
+        ...base.meta.loss,
+        ...(overrides.meta?.loss ?? {}),
+      },
+      counters: {
+        ...base.meta.counters,
+        ...(overrides.meta?.counters ?? {}),
+      },
+    },
+  }
+}
 
 describe('applyAction', () => {
   it('spends energy and increases skill when training', () => {
