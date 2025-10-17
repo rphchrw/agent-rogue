@@ -4,6 +4,7 @@ import { applyAction, type GameAction, type GameState } from './core/engine'
 import { pickEvent, type GameEvent } from './core/events'
 import EventModal from './ui/EventModal'
 import { createRng } from './core/rng'
+import { UPGRADES, applyDailyPassives, applyUpgrade } from './core/upgrades'
 
 const initialState: GameState = {
   day: 1,
@@ -13,6 +14,10 @@ const initialState: GameState = {
   morale: 5,
   skill: 0,
   money: 10,
+  meta: {
+    upgrades: {},
+    effects: {},
+  },
 }
 
 const containerStyle: React.CSSProperties = {
@@ -42,6 +47,28 @@ const buttonStyle: React.CSSProperties = {
   padding: '8px 12px',
 }
 
+const shopToggleStyle: React.CSSProperties = {
+  ...buttonStyle,
+  alignSelf: 'flex-start',
+}
+
+const shopPanelStyle: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 8,
+  padding: 12,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+}
+
+const shopItemStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  borderBottom: '1px solid #eee',
+  paddingBottom: 8,
+}
+
 const actions: { id: GameAction; label: string }[] = [
   { id: 'TRAIN', label: 'Train' },
   { id: 'WORK', label: 'Work' },
@@ -51,6 +78,7 @@ const actions: { id: GameAction; label: string }[] = [
 const Game = () => {
   const [state, setState] = useState<GameState>(initialState)
   const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(null)
+  const [showShop, setShowShop] = useState(false)
   const rngRef = useRef<(() => number) | null>(null)
 
   if (!rngRef.current) {
@@ -79,19 +107,25 @@ const Game = () => {
         error: undefined,
       }
 
+      const withPassives = applyDailyPassives(updated)
+
       const rng = rngRef.current
-      if (updated.day !== 1 && rng) {
+      if (withPassives.day !== 1 && rng) {
         const roll = rng()
         if (roll < 0.35) {
-          const event = pickEvent(updated, rng)
+          const event = pickEvent(withPassives, rng)
           if (event) {
             setPendingEvent(event)
           }
         }
       }
 
-      return updated
+      return withPassives
     })
+  }
+
+  const handleUpgradePurchase = (id: string) => {
+    setState(current => applyUpgrade(current, id))
   }
 
   const handleEventChoice = (choiceId: string) => {
@@ -141,6 +175,47 @@ const Game = () => {
           </button>
         ))}
       </div>
+
+      <button
+        type="button"
+        style={shopToggleStyle}
+        onClick={() => setShowShop(current => !current)}
+      >
+        {showShop ? 'Hide Shop' : 'Open Shop'}
+      </button>
+
+      {showShop ? (
+        <div style={shopPanelStyle}>
+          <strong>Upgrades</strong>
+          {UPGRADES.map(upgrade => {
+            const level = state.meta?.upgrades?.[upgrade.id] ?? 0
+            const maxLevel = upgrade.repeatable ? upgrade.maxLevel ?? Infinity : upgrade.maxLevel ?? 1
+            const atMax = level >= maxLevel
+            const cost = upgrade.cost
+            return (
+              <div key={upgrade.id} style={shopItemStyle}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{upgrade.name}</span>
+                  <span>${cost}</span>
+                </div>
+                <div style={{ fontSize: 12, color: '#555' }}>{upgrade.desc}</div>
+                <div style={{ fontSize: 12 }}>
+                  Level: {level}
+                  {Number.isFinite(maxLevel) ? ` / ${maxLevel}` : ''}
+                </div>
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={() => handleUpgradePurchase(upgrade.id)}
+                  disabled={state.money < cost || atMax}
+                >
+                  {atMax ? 'Maxed' : 'Buy'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
 
       <button
         type="button"

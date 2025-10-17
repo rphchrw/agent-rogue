@@ -1,5 +1,10 @@
 export type GameAction = 'TRAIN' | 'WORK' | 'REST'
 
+export interface GameMeta {
+  upgrades?: Record<string, number>
+  effects?: Record<string, any>
+}
+
 export interface GameState {
   day: number
   week: number
@@ -9,6 +14,7 @@ export interface GameState {
   skill: number
   money: number
   error?: string
+  meta?: GameMeta
 }
 
 type ActionEffect = {
@@ -35,20 +41,30 @@ export function applyAction(state: GameState, action: GameAction): GameState {
     return state
   }
 
-  if (state.energy < config.cost) {
+  const effects = state.meta?.effects ?? {}
+  const costReduction = effects.energyCostReduction ?? 0
+  const adjustedCost = Math.max(0, config.cost - costReduction)
+
+  if (state.energy < adjustedCost) {
     return {
       ...state,
       error: 'Not enough energy for that action.',
     }
   }
 
+  const moraleBonus = action === 'REST' ? effects.restMoraleBonus ?? 0 : 0
+
   const nextEnergy = clamp(
-    state.energy - config.cost + (config.energyGain ?? 0),
+    state.energy - adjustedCost + (config.energyGain ?? 0),
     0,
     state.maxEnergy,
   )
 
-  const nextMorale = clamp(state.morale + (config.morale ?? 0), 0, Number.POSITIVE_INFINITY)
+  const nextMorale = clamp(
+    state.morale + (config.morale ?? 0) + moraleBonus,
+    0,
+    Number.POSITIVE_INFINITY,
+  )
   const nextSkill = clamp(state.skill + (config.skill ?? 0), 0, Number.POSITIVE_INFINITY)
   const nextMoney = Math.max(0, state.money + (config.money ?? 0))
 
