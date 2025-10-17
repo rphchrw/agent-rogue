@@ -8,8 +8,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "types": ["vite/client"],
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "baseUrl": "."
+    "lib": ["ES2020", "DOM", "DOM.Iterable"]
   },
   "include": ["src", "tests", "vite-env.d.ts"]
 }
