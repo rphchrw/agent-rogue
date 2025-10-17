@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { clearSave, loadState, saveState } from '../src/core/save'
-import type { GameState } from '../src/core/engine'
+import { createInitialState, type GameState } from '../src/core/engine'
 
 class MockStorage implements Storage {
   private store = new Map<string, string>()
@@ -39,7 +39,9 @@ describe('save system', () => {
   })
 
   it('persists and restores game state', () => {
+    const base = createInitialState()
     const state: GameState = {
+      ...base,
       day: 3,
       week: 2,
       energy: 4,
@@ -52,8 +54,16 @@ describe('save system', () => {
           booster: 2,
         },
         effects: {
-          energyCostReduction: 1,
+          energyCostDelta: -1,
+          dailyIncome: 3,
         },
+        counters: {
+          trainsThisWeek: 2,
+          daysFullEnergy: 1,
+          zeroMoneyStreak: 0,
+          lowMoraleStreak: 0,
+        },
+        goalsCompleted: ['nest-egg'],
       },
     }
 
@@ -67,8 +77,16 @@ describe('save system', () => {
           booster: 2,
         },
         effects: {
-          energyCostReduction: 1,
+          energyCostDelta: -1,
+          dailyIncome: 3,
         },
+        counters: {
+          trainsThisWeek: 2,
+          daysFullEnergy: 1,
+          zeroMoneyStreak: 0,
+          lowMoraleStreak: 0,
+        },
+        goalsCompleted: ['nest-egg'],
       },
     })
   })

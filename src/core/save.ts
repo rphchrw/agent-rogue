@@ -1,4 +1,4 @@
-import { type GameState } from './engine'
+import { createInitialState, type GameState } from './engine'
 
 const STORAGE_KEY = 'agent-rogue'
 
@@ -21,12 +21,85 @@ const sanitizeUpgrades = (value: unknown): Record<string, number> => {
   return upgrades
 }
 
-const sanitizeEffects = (value: unknown): Record<string, unknown> => {
+const defaultCounters = () => ({
+  trainsThisWeek: 0,
+  daysFullEnergy: 0,
+  zeroMoneyStreak: 0,
+  lowMoraleStreak: 0,
+})
+
+const sanitizeEffects = (
+  value: unknown,
+): GameState['meta']['effects'] => {
   if (!isRecord(value)) {
     return {}
   }
 
-  return { ...value }
+  const effects: GameState['meta']['effects'] = {}
+
+  const maybeNumber = (entry: unknown): number | null =>
+    typeof entry === 'number' && Number.isFinite(entry) ? entry : null
+
+  const energyCostDelta = maybeNumber(value.energyCostDelta)
+  if (energyCostDelta !== null) {
+    effects.energyCostDelta = energyCostDelta
+  }
+
+  const restMoraleBonus = maybeNumber(value.restMoraleBonus)
+  if (restMoraleBonus !== null && restMoraleBonus >= 0) {
+    effects.restMoraleBonus = restMoraleBonus
+  }
+
+  const dailyIncome = maybeNumber(value.dailyIncome)
+  if (dailyIncome !== null && dailyIncome >= 0) {
+    effects.dailyIncome = dailyIncome
+  }
+
+  const dailyMorale = maybeNumber(value.dailyMorale)
+  if (dailyMorale !== null && dailyMorale >= 0) {
+    effects.dailyMorale = dailyMorale
+  }
+
+  return effects
+}
+
+const sanitizeCounters = (
+  value: unknown,
+): GameState['meta']['counters'] => {
+  const base = defaultCounters()
+  if (!isRecord(value)) {
+    return base
+  }
+
+  const read = (key: keyof GameState['meta']['counters']) => {
+    const entry = value[key]
+    if (typeof entry === 'number' && Number.isFinite(entry) && entry >= 0) {
+      return entry
+    }
+    return base[key]
+  }
+
+  return {
+    trainsThisWeek: read('trainsThisWeek'),
+    daysFullEnergy: read('daysFullEnergy'),
+    zeroMoneyStreak: read('zeroMoneyStreak'),
+    lowMoraleStreak: read('lowMoraleStreak'),
+  }
+}
+
+const sanitizeGoals = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  for (const entry of value) {
+    if (typeof entry === 'string') {
+      seen.add(entry)
+    }
+  }
+
+  return Array.from(seen)
 }
 
 const sanitizeNumber = (value: unknown): number | null => {
@@ -66,15 +139,20 @@ const sanitizeState = (value: unknown): GameState | null => {
     return null
   }
 
+  const initialMeta = createInitialState().meta
   const metaRaw = value.meta
   const meta = isRecord(metaRaw)
     ? {
         upgrades: sanitizeUpgrades(metaRaw.upgrades),
         effects: sanitizeEffects(metaRaw.effects),
+        counters: sanitizeCounters(metaRaw.counters),
+        goalsCompleted: sanitizeGoals(metaRaw.goalsCompleted),
       }
     : {
-        upgrades: {},
-        effects: {},
+        upgrades: initialMeta.upgrades,
+        effects: initialMeta.effects,
+        counters: initialMeta.counters,
+        goalsCompleted: initialMeta.goalsCompleted,
       }
 
   const next: GameState = {
@@ -85,7 +163,12 @@ const sanitizeState = (value: unknown): GameState | null => {
     morale: Math.max(0, morale),
     skill: Math.max(0, skill),
     money: Math.max(0, money),
-    meta,
+    meta: {
+      upgrades: { ...meta.upgrades },
+      effects: { ...meta.effects },
+      counters: { ...meta.counters },
+      goalsCompleted: [...meta.goalsCompleted],
+    },
   }
 
   if (typeof value.error === 'string') {
