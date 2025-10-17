@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { pickEvent, EVENTS } from '../src/core/events'
-import { advanceDay, createInitialState, type GameState } from '../src/core/engine'
+import { advanceDay, createInitialState, reconcileState } from '../src/core/engine'
+import type { GameState } from '../src/core/engine'
 import { next, seedRng, type RngState } from '../src/core/rng'
 
 const baseState: GameState = createInitialState()
@@ -71,7 +72,7 @@ describe('events', () => {
             if (event) {
               events.push(event.id)
               const firstChoice = event.choices[0]
-              state = firstChoice.apply(state)
+              state = reconcileState(state, firstChoice.apply(state))
             }
           }
         }

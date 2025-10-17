@@ -27,7 +27,7 @@ export const GOALS: Goal[] = [
     id: 'focused-week',
     title: 'Focused Week',
     desc: 'Train three times in a single week.',
-    isComplete: state => state.meta.counters.trainThisWeek >= 3,
+    isComplete: state => state.meta.counters.trainsThisWeek >= 3,
     reward: state => ({
       ...state,
       skill: state.skill + 1,
@@ -37,7 +37,7 @@ export const GOALS: Goal[] = [
     id: 'early-riser',
     title: 'Early Riser',
     desc: 'End the day with full energy three times.',
-    isComplete: state => state.meta.counters.fullEnergyDays >= 3,
+    isComplete: state => state.meta.counters.daysFullEnergy >= 3,
     reward: state => ({
       ...state,
       energy: clampEnergy(state.energy + 1, state.maxEnergy),
@@ -66,7 +66,7 @@ export const evaluateGoals = (
   next: GameState,
 ): { state: GameState; completed: string[] } => {
   let updatedState = next
-  const completed = new Set(updatedState.meta.completedGoals)
+  const completed = new Set(updatedState.meta.goalsCompleted)
   const newlyCompleted: string[] = []
 
   for (const goal of GOALS) {
@@ -90,18 +90,8 @@ export const evaluateGoals = (
     ...updatedState,
     meta: {
       ...updatedState.meta,
-      completedGoals: Array.from(completed),
+      goalsCompleted: Array.from(completed),
     },
-  }
-
-  if (
-    updatedState.status === 'ongoing' &&
-    updatedState.meta.completedGoals.length >= updatedState.meta.goalTarget
-  ) {
-    updatedState = {
-      ...updatedState,
-      status: 'won',
-    }
   }
 
   return { state: updatedState, completed: newlyCompleted }

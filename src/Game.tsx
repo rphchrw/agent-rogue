@@ -1,17 +1,22 @@
 import { useRef, useState } from 'react'
 
 import {
-  applyAction,
-  type GameAction,
-  type GameState,
-  createInitialState,
   advanceDay,
-  checkLoss,
+  applyAction,
+  createInitialState,
+  getOutcome,
+  GOAL_TARGET,
+  LOSS_CONDITIONS,
+  reconcileState,
+  type GameActionType,
+  type GameState,
 } from './core/engine'
 import { pickEvent, type GameEvent } from './core/events'
 import EventModal from './ui/EventModal'
 import { createRng } from './core/rng'
-import { GOALS, evaluateGoals } from './core/goals'
+import { GOALS } from './core/goals'
+
+type GameEventChoice = GameEvent['choices'][number]
 
 const createInitialGameState = () => createInitialState()
 
@@ -42,7 +47,7 @@ const buttonStyle: React.CSSProperties = {
   padding: '8px 12px',
 }
 
-const actions: { id: GameAction; label: string }[] = [
+const actions: { id: GameActionType; label: string }[] = [
   { id: 'TRAIN', label: 'Train' },
   { id: 'WORK', label: 'Work' },
   { id: 'REST', label: 'Rest' },
@@ -92,35 +97,22 @@ const Game = () => {
     rngRef.current = createRng(Date.now())
   }
 
-  const handleAction = (action: GameAction) => {
-    setState(current => {
-      if (current.status !== 'ongoing') {
-        return current
-      }
-
-      const result = applyAction(current, action)
-      const { state: evaluated } = evaluateGoals(current, result)
-      return evaluated
-    })
+  const handleAction = (action: GameActionType) => {
+    setState(current => applyAction(current, { type: action }))
   }
 
   const handleNextDay = () => {
     let nextEvent: GameEvent | null = null
     setState(current => {
-      if (current.status !== 'ongoing') {
-        return current
-      }
-
       const advanced = advanceDay(current)
-      const { state: evaluated } = evaluateGoals(current, advanced)
-      const postLossCheck = checkLoss(evaluated)
+      const outcome = getOutcome(advanced)
 
-      if (postLossCheck.status === 'ongoing') {
+      if (outcome.status === 'ongoing') {
         const rng = rngRef.current
-        if (postLossCheck.day !== 1 && rng) {
+        if (advanced.day !== 1 && rng) {
           const roll = rng()
           if (roll < 0.35) {
-            const event = pickEvent(postLossCheck, rng)
+            const event = pickEvent(advanced, rng)
             if (event) {
               nextEvent = event
             }
@@ -128,7 +120,7 @@ const Game = () => {
         }
       }
 
-      return postLossCheck
+      return advanced
     })
 
     if (nextEvent) {
@@ -144,14 +136,15 @@ const Game = () => {
 
     setPendingEvent(null)
     setState(current => {
-      const choice = event.choices.find(c => c.id === choiceId)
+      const choice = event.choices.find(
+        (candidate: GameEventChoice) => candidate.id === choiceId,
+      )
       if (!choice) {
         return current
       }
 
       const result = choice.apply(current)
-      const { state: evaluated } = evaluateGoals(current, result)
-      return evaluated
+      return reconcileState(current, result)
     })
   }
 
@@ -161,17 +154,18 @@ const Game = () => {
     setState(() => createInitialGameState())
   }
 
-  const isGameOver = state.status !== 'ongoing'
-  const milestoneProgress = `${state.meta.completedGoals.length}/${state.meta.goalTarget}`
+  const outcome = getOutcome(state)
+  const isGameOver = outcome.status !== 'ongoing'
+  const milestoneProgress = `${state.meta.goalsCompleted.length}/${GOAL_TARGET}`
 
   const outcomeMessage =
-    state.status === 'won'
+    outcome.status === 'won'
       ? `You completed ${milestoneProgress} milestones!`
-      : state.status === 'lost'
+      : outcome.status === 'lost'
         ? `Mission failed: ${
-            state.loseReason === 'morale'
-              ? 'Morale hit zero for too long.'
-              : 'Money stayed at zero for too long.'
+            outcome.loseReason === 'morale'
+              ? `Morale hit zero for ${LOSS_CONDITIONS.moraleZeroDays} days.`
+              : `Money stayed at zero for ${LOSS_CONDITIONS.moneyZeroDays} days.`
           }`
         : ''
 
@@ -189,8 +183,6 @@ const Game = () => {
         <div>Skill: {state.skill}</div>
         <div>Money: ${state.money}</div>
       </div>
-
-      {state.error ? <div style={{ color: 'crimson' }}>{state.error}</div> : null}
 
       <div style={buttonRowStyle}>
         {actions.map(action => (
@@ -221,7 +213,7 @@ const Game = () => {
         </div>
         <ul style={milestoneListStyle}>
           {GOALS.map(goal => {
-            const complete = state.meta.completedGoals.includes(goal.id)
+            const complete = state.meta.goalsCompleted.includes(goal.id)
             return (
               <li key={goal.id} style={milestoneItemStyle}>
                 <span>
@@ -240,7 +232,7 @@ const Game = () => {
 
       {isGameOver ? (
         <div style={bannerStyle}>
-          <strong>{state.status === 'won' ? 'Mission Complete!' : 'Mission Failed'}</strong>
+          <strong>{outcome.status === 'won' ? 'Mission Complete!' : 'Mission Failed'}</strong>
           <span>{outcomeMessage}</span>
           <button type="button" style={buttonStyle} onClick={handleRestart}>
             Restart
