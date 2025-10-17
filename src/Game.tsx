@@ -4,6 +4,7 @@ import {
   advanceDay,
   applyAction,
   createInitialState,
+  type GameAction,
   type GameActionType,
   type GameState,
 } from './core/engine'
@@ -105,12 +106,12 @@ const Game = () => {
     }
   }, [state])
 
-  const handleAction = (actionType: GameActionType) => {
+  const handleAction = (action: GameAction) => {
     if (pendingEvent || outcome.status !== 'ongoing') {
       return
     }
 
-    setState(current => applyAction(current, { type: actionType }))
+    setState(current => applyAction(current, action))
   }
 
   const handleNextDay = () => {
@@ -220,7 +221,7 @@ const Game = () => {
             key={action.id}
             type="button"
             style={buttonStyle}
-            onClick={() => handleAction(action.id)}
+            onClick={() => handleAction({ type: action.id })}
             disabled={Boolean(pendingEvent) || outcome.status !== 'ongoing'}
           >
             {action.label}
