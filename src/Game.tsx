@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { applyAction, type GameAction, type GameState } from './core/engine'
 import { pickEvent, type GameEvent } from './core/events'
 import EventModal from './ui/EventModal'
 import { createRng } from './core/rng'
 import { UPGRADES, applyDailyPassives, applyUpgrade } from './core/upgrades'
+import { clearSave, loadState, saveState } from './core/save'
 
-const initialState: GameState = {
+const createInitialState = (): GameState => ({
   day: 1,
   week: 1,
   energy: 6,
@@ -18,7 +19,7 @@ const initialState: GameState = {
     upgrades: {},
     effects: {},
   },
-}
+})
 
 const containerStyle: React.CSSProperties = {
   maxWidth: 320,
@@ -76,7 +77,7 @@ const actions: { id: GameAction; label: string }[] = [
 ]
 
 const Game = () => {
-  const [state, setState] = useState<GameState>(initialState)
+  const [state, setState] = useState<GameState>(() => createInitialState())
   const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(null)
   const [showShop, setShowShop] = useState(false)
   const rngRef = useRef<(() => number) | null>(null)
@@ -84,6 +85,29 @@ const Game = () => {
   if (!rngRef.current) {
     rngRef.current = createRng(Date.now())
   }
+
+  useEffect(() => {
+    const restored = loadState()
+    if (restored) {
+      setState(restored)
+      setPendingEvent(null)
+      setShowShop(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      saveState(state)
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [state])
 
   const handleAction = (action: GameAction) => {
     setState(current => applyAction(current, action))
@@ -145,6 +169,29 @@ const Game = () => {
     })
   }
 
+  const handleSaveNow = () => {
+    saveState(state)
+  }
+
+  const handleLoad = () => {
+    const restored = loadState()
+    if (restored) {
+      setState(restored)
+      setPendingEvent(null)
+    } else {
+      setState(createInitialState())
+      setPendingEvent(null)
+    }
+    setShowShop(false)
+  }
+
+  const handleNewRun = () => {
+    clearSave()
+    setState(createInitialState())
+    setPendingEvent(null)
+    setShowShop(false)
+  }
+
   return (
     <div style={containerStyle}>
       <h1>Agent Rogue</h1>
@@ -161,6 +208,18 @@ const Game = () => {
       </div>
 
       {state.error ? <div style={{ color: 'crimson' }}>{state.error}</div> : null}
+
+      <div style={buttonRowStyle}>
+        <button type="button" style={buttonStyle} onClick={handleSaveNow}>
+          Save Now
+        </button>
+        <button type="button" style={buttonStyle} onClick={handleLoad}>
+          Load
+        </button>
+        <button type="button" style={buttonStyle} onClick={handleNewRun}>
+          New Run
+        </button>
+      </div>
 
       <div style={buttonRowStyle}>
         {actions.map(action => (
