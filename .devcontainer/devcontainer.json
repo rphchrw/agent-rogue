@@ -1,0 +1,9 @@
+{
+  "name": "Agent Rogue",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "postCreateCommand": "npm ci || npm install"
+}
