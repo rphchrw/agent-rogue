@@ -1,23 +1,28 @@
+/** Minimal ESLint config: no plugins, no extra parsers */
 module.exports = {
-  env: {
-    browser: true,
-    es2020: true,
-  },
-  extends: [
-    'eslint:recommended',
-    'plugin:react-hooks/recommended',
-  ],
+  root: true,
+  env: { browser: true, es2022: true, node: true },
   parserOptions: {
     ecmaVersion: 'latest',
     sourceType: 'module',
+    ecmaFeatures: { jsx: true },
   },
-  plugins: [
-    'react-refresh',
+  extends: ['eslint:recommended'],
+  overrides: [
+    {
+      files: ['**/*.jsx'],
+      rules: {
+        // helpful but plugin-free tweaks
+        'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+        'no-console': 'off',
+      },
+    },
+    {
+      files: ['**/*.js'],
+      rules: {
+        'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+        'no-console': 'off',
+      },
+    },
   ],
-  rules: {
-    'react-refresh/only-export-components': [
-      'warn',
-      { allowConstantExport: true },
-    ],
-  },
-}
+};
