@@ -1,46 +1,56 @@
-export type GameAction = 'Train' | 'Work' | 'Rest'
+export type GameAction = 'TRAIN' | 'WORK' | 'REST'
 
 export interface GameState {
   day: number
   week: number
   energy: number
+  maxEnergy: number
   morale: number
   skill: number
   money: number
+  error?: string
 }
 
-interface ActionDelta {
-  energy?: number
+type ActionEffect = {
+  cost: number
   morale?: number
   skill?: number
   money?: number
-}
-
-const MAX_ENERGY = 10
-const MAX_MORALE = 100
-const MAX_SKILL = 100
-
-const ACTION_DELTAS: Record<GameAction, ActionDelta> = {
-  Train: { energy: -3, morale: +1, skill: +2 },
-  Work: { energy: -4, morale: -1, money: +75, skill: +1 },
-  Rest: { energy: +5, morale: +3 },
+  energyGain?: number
 }
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max)
 
-export function applyAction(state: GameState, action: GameAction): GameState {
-  const delta = ACTION_DELTAS[action]
-  const energyCost = delta.energy ?? 0
+const ACTIONS: Record<GameAction, ActionEffect> = {
+  TRAIN: { cost: 3, skill: 2 },
+  WORK: { cost: 2, money: 5 },
+  REST: { cost: 0, morale: 1, energyGain: 2 },
+}
 
-  if (energyCost < 0 && state.energy + energyCost < 0) {
+export function applyAction(state: GameState, action: GameAction): GameState {
+  const config = ACTIONS[action]
+
+  if (!config) {
     return state
   }
 
-  const nextEnergy = clamp(state.energy + energyCost, 0, MAX_ENERGY)
-  const nextMorale = clamp(state.morale + (delta.morale ?? 0), 0, MAX_MORALE)
-  const nextSkill = clamp(state.skill + (delta.skill ?? 0), 0, MAX_SKILL)
-  const nextMoney = Math.max(0, state.money + (delta.money ?? 0))
+  if (state.energy < config.cost) {
+    return {
+      ...state,
+      error: 'Not enough energy for that action.',
+    }
+  }
+
+  const nextEnergy = clamp(
+    state.energy - config.cost + (config.energyGain ?? 0),
+    0,
+    state.maxEnergy,
+  )
+
+  const nextMorale = clamp(state.morale + (config.morale ?? 0), 0, Number.POSITIVE_INFINITY)
+  const nextSkill = clamp(state.skill + (config.skill ?? 0), 0, Number.POSITIVE_INFINITY)
+  const nextMoney = Math.max(0, state.money + (config.money ?? 0))
 
   return {
     ...state,
@@ -48,5 +58,6 @@ export function applyAction(state: GameState, action: GameAction): GameState {
     morale: nextMorale,
     skill: nextSkill,
     money: nextMoney,
+    error: undefined,
   }
 }
