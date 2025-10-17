@@ -1,12 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { applyAction, type GameAction, type GameState } from './core/engine'
+import {
+  advanceDay,
+  applyAction,
+  createInitialState,
+  getOutcome,
+  GOAL_TARGET,
+  LOSS_CONDITIONS,
+  reconcileState,
+  type GameActionType,
+  type GameState,
+} from './core/engine'
 import { pickEvent, type GameEvent } from './core/events'
 import EventModal from './ui/EventModal'
 import { createRng } from './core/rng'
+import { GOALS } from './core/goals'
 import { UPGRADES, applyDailyPassives, applyUpgrade } from './core/upgrades'
 import { clearSave, loadState, saveState } from './core/save'
 
+// Single source of truth for initial state
 const createInitialState = (): GameState => ({
   day: 1,
   week: 1,
@@ -18,8 +30,21 @@ const createInitialState = (): GameState => ({
   meta: {
     upgrades: {},
     effects: {},
+    // If your GameState already includes these, keep them.
+    // If not, delete the 'counters' and 'goalsCompleted' keys below or update the type.
+    counters: {
+      trainsThisWeek: 0,
+      daysFullEnergy: 0,
+      zeroMoneyStreak: 0,
+      lowMoraleStreak: 0,
+    },
+    goalsCompleted: [],
   },
 })
+
+// Back-compat alias for code that expects createInitialGameState
+const createInitialGameState = () => createInitialState()
+
 
 const containerStyle: React.CSSProperties = {
   maxWidth: 320,
@@ -48,10 +73,11 @@ const buttonStyle: React.CSSProperties = {
   padding: '8px 12px',
 }
 
+// --- Shop styles from main (keep) ---
 const shopToggleStyle: React.CSSProperties = {
   ...buttonStyle,
   alignSelf: 'flex-start',
-}
+};
 
 const shopPanelStyle: React.CSSProperties = {
   border: '1px solid #ddd',
@@ -60,7 +86,7 @@ const shopPanelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
-}
+};
 
 const shopItemStyle: React.CSSProperties = {
   display: 'flex',
@@ -68,16 +94,58 @@ const shopItemStyle: React.CSSProperties = {
   gap: 4,
   borderBottom: '1px solid #eee',
   paddingBottom: 8,
-}
+};
 
+// --- Unified actions list ---
 const actions: { id: GameAction; label: string }[] = [
+  { id: 'TRAIN', label: 'Train' },
+  { id: 'WORK',  label: 'Work' },
+  { id: 'REST',  label: 'Rest' },
+];
+
   { id: 'TRAIN', label: 'Train' },
   { id: 'WORK', label: 'Work' },
   { id: 'REST', label: 'Rest' },
 ]
 
+const milestoneContainerStyle: React.CSSProperties = {
+  borderTop: '1px solid #ddd',
+  paddingTop: 12,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+}
+
+const milestoneListStyle: React.CSSProperties = {
+  listStyle: 'none',
+  margin: 0,
+  padding: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+}
+
+const milestoneItemStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  padding: '4px 0',
+}
+
+const bannerStyle: React.CSSProperties = {
+  border: '1px solid #888',
+  borderRadius: 6,
+  padding: 12,
+  backgroundColor: '#fdf2d7',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  textAlign: 'center',
+}
+
 const Game = () => {
-  const [state, setState] = useState<GameState>(() => createInitialState())
+const [state, setState] = useState<GameState>(() => createInitialState());
+
   const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(null)
   const [showShop, setShowShop] = useState(false)
   const rngRef = useRef<(() => number) | null>(null)
@@ -86,66 +154,65 @@ const Game = () => {
     rngRef.current = createRng(Date.now())
   }
 
-  useEffect(() => {
-    const restored = loadState()
-    if (restored) {
-      setState(restored)
-      setPendingEvent(null)
-      setShowShop(false)
-    }
-  }, [])
+// Restore from localStorage on mount
+useEffect(() => {
+  const restored = loadState();
+  if (restored) {
+    setState(restored);
+    setPendingEvent(null);
+    setShowShop(false);
+  }
+}, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
+// Autosave (debounced)
+useEffect(() => {
+  if (typeof window === 'undefined') return;
+  const timeout = window.setTimeout(() => {
+    saveState(state);
+  }, 300);
+  return () => window.clearTimeout(timeout);
+}, [state]);
 
-    const timeout = window.setTimeout(() => {
-      saveState(state)
-    }, 300)
+// Unified action handler (use main's type/signature)
+const handleAction = (action: GameAction) => {
+  setState(current => applyAction(current, action));
+};
 
-    return () => {
-      window.clearTimeout(timeout)
-    }
-  }, [state])
+// If other code still uses GameActionType, keep a back-compat alias:
+type GameActionType = GameAction;
 
-  const handleAction = (action: GameAction) => {
-    setState(current => applyAction(current, action))
   }
 
   const handleNextDay = () => {
+    let nextEvent: GameEvent | null = null
     setState(current => {
-      let nextDay = current.day + 1
-      let nextWeek = current.week
+// Advance the day via engine (handles passives, counters, goals, win/lose checks)
+const advanced = advanceDay(current);
 
-      if (nextDay > 7) {
-        nextDay = 1
-        nextWeek += 1
+// If you have win/lose logic, keep it here
+const outcome = getOutcome(advanced);
+
+// Only roll events if the run is still ongoing
+if (outcome.status === 'ongoing') {
+  const rng = rngRef.current;
+  if (advanced.day !== 1 && rng) {
+    const roll = rng();
+    if (roll < 0.35) {
+      const event = pickEvent(advanced, rng);
+      if (event) {
+        setPendingEvent(event); // show the modal
       }
+    }
+  }
+}
 
-      const updated: GameState = {
-        ...current,
-        day: nextDay,
-        week: nextWeek,
-        energy: current.maxEnergy,
-        error: undefined,
-      }
+return advanced;
 
-      const withPassives = applyDailyPassives(updated)
-
-      const rng = rngRef.current
-      if (withPassives.day !== 1 && rng) {
-        const roll = rng()
-        if (roll < 0.35) {
-          const event = pickEvent(withPassives, rng)
-          if (event) {
-            setPendingEvent(event)
-          }
-        }
-      }
-
-      return withPassives
     })
+
+    if (nextEvent) {
+      setPendingEvent(nextEvent)
+    }
   }
 
   const handleUpgradePurchase = (id: string) => {
@@ -160,37 +227,63 @@ const Game = () => {
 
     setPendingEvent(null)
     setState(current => {
-      const choice = event.choices.find(c => c.id === choiceId)
+      const choice = event.choices.find(
+        (candidate: GameEventChoice) => candidate.id === choiceId,
+      )
       if (!choice) {
         return current
       }
 
-      return choice.apply(current)
+      const result = choice.apply(current)
+      return reconcileState(current, result)
     })
   }
 
-  const handleSaveNow = () => {
-    saveState(state)
-  }
+// --- Persistence + run controls ---
+const handleSaveNow = () => {
+  saveState(state);
+};
 
-  const handleLoad = () => {
-    const restored = loadState()
-    if (restored) {
-      setState(restored)
-      setPendingEvent(null)
-    } else {
-      setState(createInitialState())
-      setPendingEvent(null)
-    }
-    setShowShop(false)
+const handleLoad = () => {
+  const restored = loadState();
+  if (restored) {
+    setState(restored);
+  } else {
+    setState(createInitialState());
   }
+  // reset run context
+  rngRef.current = createRng(Date.now());
+  setPendingEvent(null);
+  setShowShop(false);
+};
 
-  const handleNewRun = () => {
-    clearSave()
-    setState(createInitialState())
-    setPendingEvent(null)
-    setShowShop(false)
-  }
+const handleNewRun = () => {
+  clearSave();
+  rngRef.current = createRng(Date.now());
+  setState(createInitialState());
+  setPendingEvent(null);
+  setShowShop(false);
+};
+
+// Back-compat for older code paths
+const handleRestart = () => handleNewRun();
+
+// --- Outcome / milestones UI text ---
+const outcome = getOutcome(state);
+const isGameOver = outcome.status !== 'ongoing';
+const milestoneProgress = `${state.meta?.goalsCompleted?.length ?? 0}/${GOAL_TARGET}`;
+
+const outcomeMessage =
+  outcome.status === 'won'
+    ? `You completed ${milestoneProgress} milestones!`
+    : outcome.status === 'lost'
+      ? `Mission failed: ${
+          outcome.loseReason === 'morale'
+            ? `Morale hit zero for ${LOSS_CONDITIONS.moraleZeroDays} days.`
+            : `Money stayed at zero for ${LOSS_CONDITIONS.moneyZeroDays} days.`
+        }`
+      : '';
+
 
   return (
     <div style={containerStyle}>
@@ -206,8 +299,6 @@ const Game = () => {
         <div>Skill: {state.skill}</div>
         <div>Money: ${state.money}</div>
       </div>
-
-      {state.error ? <div style={{ color: 'crimson' }}>{state.error}</div> : null}
 
       <div style={buttonRowStyle}>
         <button type="button" style={buttonStyle} onClick={handleSaveNow}>
@@ -228,7 +319,7 @@ const Game = () => {
             type="button"
             style={buttonStyle}
             onClick={() => handleAction(action.id)}
-            disabled={Boolean(pendingEvent)}
+            disabled={Boolean(pendingEvent) || isGameOver}
           >
             {action.label}
           </button>
@@ -280,13 +371,42 @@ const Game = () => {
         type="button"
         style={buttonStyle}
         onClick={handleNextDay}
-        disabled={Boolean(pendingEvent)}
+        disabled={Boolean(pendingEvent) || isGameOver}
       >
         Next Day
       </button>
 
+      <div style={milestoneContainerStyle}>
+        <div>
+          <strong>Milestones</strong> ({milestoneProgress})
+        </div>
+        <ul style={milestoneListStyle}>
+          {GOALS.map(goal => {
+            const complete = state.meta.goalsCompleted.includes(goal.id)
+            return (
+              <li key={goal.id} style={milestoneItemStyle}>
+                <span>
+                  {complete ? '✅' : '⬜️'} {goal.title}
+                </span>
+                <span style={{ fontSize: 12, color: '#555' }}>{goal.desc}</span>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+
       {pendingEvent ? (
         <EventModal event={pendingEvent} onChoose={handleEventChoice} />
+      ) : null}
+
+      {isGameOver ? (
+        <div style={bannerStyle}>
+          <strong>{outcome.status === 'won' ? 'Mission Complete!' : 'Mission Failed'}</strong>
+          <span>{outcomeMessage}</span>
+          <button type="button" style={buttonStyle} onClick={handleRestart}>
+            Restart
+          </button>
+        </div>
       ) : null}
     </div>
   )
