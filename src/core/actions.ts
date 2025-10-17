@@ -1,19 +1,23 @@
 export type StatKey = "energy" | "morale" | "cash";
+
 export interface Stats {
   energy: number;
   morale: number;
   cash: number;
 }
+
 export type ActionId = "Train" | "Scout" | "Rest" | "Upgrade";
+
 export interface Delta {
   energy?: number;
   morale?: number;
   cash?: number;
 }
+
 export interface ActionDef {
   id: ActionId;
   label: string;
-  costs: Delta; // negative deltas paid up front
+  costs: Delta;   // negative deltas paid up front
   effects: Delta; // applied after costs
 }
 
@@ -52,17 +56,17 @@ export function clampStats(s: Stats): Stats {
   };
 }
 
-export function canAfford(s: Stats, costs: Delta): boolean {
-  const post = applyDelta(s, costs);
-  return post.energy >= 0 && post.cash >= 0; // morale can go 0..100 only after clamp
-}
-
 export function applyDelta(s: Stats, d: Delta): Stats {
   return {
     energy: s.energy + (d.energy ?? 0),
     morale: s.morale + (d.morale ?? 0),
     cash: s.cash + (d.cash ?? 0),
   };
+}
+
+export function canAfford(s: Stats, costs: Delta): boolean {
+  const post = applyDelta(s, costs);
+  return post.energy >= 0 && post.cash >= 0; // morale clamp happens after effects
 }
 
 /** Pure: returns {ok, before, after, applied} without side effects */
