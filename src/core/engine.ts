@@ -1,40 +1,91 @@
 import { evaluateGoals } from './goals'
 
-export type GameActionType = 'TRAIN' | 'WORK' | 'REST'
+// --- Action & Outcome Types ---
+export type GameActionType = 'TRAIN' | 'WORK' | 'REST';
 
-export type GameAction = { type: GameActionType }
+export type GameAction = { type: GameActionType };
 
-export type LoseReason = 'morale' | 'money'
+export type LoseReason = 'morale' | 'money';
 
 export type GameOutcome =
   | { status: 'ongoing' }
   | { status: 'won' }
-  | { status: 'lost'; loseReason: LoseReason }
+  | { status: 'lost'; loseReason: LoseReason };
 
-export type GameState = {
-  day: number
+// --- Meta / Effects / Counters / Goals ---
+export interface GameMeta {
+  upgrades: Record<string, number>;
+  effects: {
+    energyCostDelta?: number;
+    restMoraleBonus?: number;
+    dailyIncome?: number;
+    dailyMorale?: number;
+  };
+  counters: {
+    trainsThisWeek: number;
+    daysFullEnergy: number;
+    zeroMoneyStreak: number;
+    lowMoraleStreak: number;
+  };
+  goalsCompleted: string[];
+}
+
+// --- Unified GameState ---
+export interface GameState {
+  day: number;
+  week: number;
+  energy: number;
+  maxEnergy: number;
+  morale: number;
+  skill: number;
+  money: number;
+  error?: string;
+  meta: GameMeta;
+}
+
   week: number
   energy: number
   maxEnergy: number
   morale: number
   skill: number
   money: number
+// --- Unified GameState (with goals + upgrades/passives) ---
+export interface GameState {
+  day: number;
+  week: number;
+  energy: number;
+  maxEnergy: number;
+  morale: number;
+  skill: number;
+  money: number;
+  error?: string;
   meta: {
-    upgrades: Record<string, number>
+    upgrades: Record<string, number>;
     effects: {
-      energyCostDelta?: number
-      restMoraleBonus?: number
-      dailyIncome?: number
-      dailyMorale?: number
-    }
+      energyCostDelta?: number;
+      restMoraleBonus?: number;
+      dailyIncome?: number;
+      dailyMorale?: number;
+    };
     counters: {
-      trainsThisWeek: number
-      daysFullEnergy: number
-      zeroMoneyStreak: number
-      lowMoraleStreak: number
-    }
-    goalsCompleted: string[]
-  }
+      trainsThisWeek: number;
+      daysFullEnergy: number;
+      zeroMoneyStreak: number;
+      lowMoraleStreak: number;
+    };
+    goalsCompleted: string[];
+  };
+}
+
+// Keep this helper if the engine uses it
+type ActionEffect = {
+  cost: number;
+  morale?: number;
+  skill?: number;
+  money?: number;
+  energyGain?: number;
+};
+
 }
 
 const ACTION_BASE: Record<
@@ -168,32 +219,43 @@ export const applyAction = (state: GameState, action: GameAction): GameState => 
     return state
   }
 
-  const energyCostDelta = state.meta.effects.energyCostDelta ?? 0
-  const effectiveCost = Math.max(0, config.cost + energyCostDelta)
+// Energy cost with passives (delta can be negative; floor at 0)
+const effects = state.meta.effects ?? {};
+const energyCostDelta = effects.energyCostDelta ?? 0;
+const effectiveCost = Math.max(0, (config.cost ?? 0) + energyCostDelta);
 
-  if (state.energy < effectiveCost) {
-    return state
-  }
+// Block if you can't afford it
+if (state.energy < effectiveCost) {
+  return { ...state, error: 'Not enough energy for that action.' };
+}
 
-  const restMoraleBonus = action.type === 'REST' ? state.meta.effects.restMoraleBonus ?? 0 : 0
+// REST bonus from passives
+const restMoraleBonus = action.type === 'REST' ? (effects.restMoraleBonus ?? 0) : 0;
 
-  const next: GameState = {
-    ...state,
-    energy: state.energy - effectiveCost + (config.energyGain ?? 0),
-    morale: state.morale + (config.morale ?? 0) + restMoraleBonus,
-    skill: state.skill + (config.skill ?? 0),
-    money: state.money + (config.money ?? 0),
-    meta: {
-      ...state.meta,
-      counters: {
-        ...state.meta.counters,
-        trainsThisWeek:
-          action.type === 'TRAIN'
-            ? state.meta.counters.trainsThisWeek + 1
-            : state.meta.counters.trainsThisWeek,
-      },
+// Apply action deltas; counters update on TRAIN
+let next: GameState = {
+  ...state,
+  error: undefined,
+  energy: state.energy - effectiveCost + (config.energyGain ?? 0),
+  morale: state.morale + (config.morale ?? 0) + restMoraleBonus,
+  skill: state.skill + (config.skill ?? 0),
+  money: state.money + (config.money ?? 0),
+  meta: {
+    ...state.meta,
+    counters: {
+      ...state.meta.counters,
+      trainsThisWeek:
+        action.type === 'TRAIN'
+          ? state.meta.counters.trainsThisWeek + 1
+          : state.meta.counters.trainsThisWeek,
     },
-  }
+  },
+};
+
+// Clamp to safe ranges
+next = clampState(next);
+return next;
+
 
   return resolveTransition(state, next)
 }
