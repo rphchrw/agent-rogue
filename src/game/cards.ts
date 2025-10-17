@@ -1,104 +1,88 @@
 import { Card } from './models';
 
 type CardEffect = { id: string; description: string };
-
 type CardKind = 'tactic' | 'event' | 'negotiation' | 'tool';
 
-interface CardWithEffects extends Card {
+export type RegisteredCard = Card & {
+  name: string;
   kind: CardKind;
   effects: CardEffect[];
-}
+};
 
-const registry = new Map<string, CardWithEffects>();
+const registry = new Map<string, RegisteredCard>();
+
+const cloneEffect = (effect: CardEffect): CardEffect => ({ ...effect });
+const cloneCard = (card: RegisteredCard): RegisteredCard => ({
+  ...card,
+  effects: card.effects.map(cloneEffect),
+});
 
 export const CardRegistry = {
-  register(card: CardWithEffects): void {
-    registry.set(card.id, { ...card });
+  register(card: RegisteredCard): void {
+    registry.set(card.id, cloneCard(card));
   },
-  get(id: string): CardWithEffects | undefined {
+  get(id: string): RegisteredCard | undefined {
     const card = registry.get(id);
-    return card ? { ...card, effects: card.effects.map((effect) => ({ ...effect })) } : undefined;
+    return card ? cloneCard(card) : undefined;
   },
-  all(): CardWithEffects[] {
-    return Array.from(registry.values()).map((card) => ({
-      ...card,
-      effects: card.effects.map((effect) => ({ ...effect })),
-    }));
+  all(): RegisteredCard[] {
+    return Array.from(registry.values()).map(cloneCard);
   },
 };
 
-const createCard = (card: CardWithEffects): CardWithEffects => {
+const createCard = (card: RegisteredCard): RegisteredCard => {
   CardRegistry.register(card);
-  return card;
+  return cloneCard(card);
 };
 
-export const starterDeck = (): CardWithEffects[] => [
+export const starterDeck = (): RegisteredCard[] => [
   createCard({
     id: 'tactic-001',
-    name: 'Momentum Push',
+    name: 'Swift Strike',
     kind: 'tactic',
-    effects: [
-      {
-        id: 'tactic-001-effect-1',
-        description: 'Gain a burst of momentum (placeholder).',
-      },
-    ],
-  }),
-  createCard({
-    id: 'event-001',
-    name: 'Unexpected Opportunity',
-    kind: 'event',
-    effects: [
-      {
-        id: 'event-001-effect-1',
-        description: 'An opportunity appears out of nowhere (placeholder).',
-      },
-    ],
-  }),
-  createCard({
-    id: 'negotiation-001',
-    name: 'Smooth Talk',
-    kind: 'negotiation',
-    effects: [
-      {
-        id: 'negotiation-001-effect-1',
-        description: 'Charm the client with practiced lines (placeholder).',
-      },
-    ],
-  }),
-  createCard({
-    id: 'tool-001',
-    name: 'Gadget Kit',
-    kind: 'tool',
-    effects: [
-      {
-        id: 'tool-001-effect-1',
-        description: 'Deploy a useful gadget from the kit (placeholder).',
-      },
-    ],
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
   }),
   createCard({
     id: 'tactic-002',
-    name: 'Calculated Risk',
+    name: 'Shadow Feint',
     kind: 'tactic',
-    effects: [
-      {
-        id: 'tactic-002-effect-1',
-        description: 'Take a calculated risk to push forward (placeholder).',
-      },
-    ],
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
+  }),
+  createCard({
+    id: 'event-001',
+    name: 'Flash Intel',
+    kind: 'event',
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
   }),
   createCard({
     id: 'event-002',
-    name: 'Inside Tip',
+    name: 'Quiet Tip',
     kind: 'event',
-    effects: [
-      {
-        id: 'event-002-effect-1',
-        description: 'Receive an insider tip from a contact (placeholder).',
-      },
-    ],
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
+  }),
+  createCard({
+    id: 'negotiation-001',
+    name: 'Silver Tongue',
+    kind: 'negotiation',
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
+  }),
+  createCard({
+    id: 'negotiation-002',
+    name: 'Hard Bargain',
+    kind: 'negotiation',
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
+  }),
+  createCard({
+    id: 'tool-001',
+    name: 'Lockpick Set',
+    kind: 'tool',
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
+  }),
+  createCard({
+    id: 'tool-002',
+    name: 'Signal Scrambler',
+    kind: 'tool',
+    effects: [{ id: 'noop', description: 'Placeholder effect' }],
   }),
 ];
 
-export type { CardWithEffects, CardEffect, CardKind };
