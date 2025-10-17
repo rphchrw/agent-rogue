@@ -1,4 +1,9 @@
 {
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "types": ["./src/types/react-shim"]
+  },
   "files": [],
   "references": [
     {

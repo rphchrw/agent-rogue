@@ -1,27 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
-import { applyAction, type GameAction, type GameState } from './core/engine'
+import {
+  advanceDay,
+  applyAction,
+  createInitialState,
+  type GameActionType,
+  type GameState,
+} from './core/engine'
+import { GOAL_TARGET, getOutcome } from './core/goals'
 import { pickEvent, type GameEvent } from './core/events'
 import EventModal from './ui/EventModal'
 import { createRng } from './core/rng'
-import { UPGRADES, applyDailyPassives, applyUpgrade } from './core/upgrades'
+import { UPGRADES, applyUpgrade } from './core/upgrades'
 import { clearSave, loadState, saveState } from './core/save'
 
-const createInitialState = (): GameState => ({
-  day: 1,
-  week: 1,
-  energy: 6,
-  maxEnergy: 6,
-  morale: 5,
-  skill: 0,
-  money: 10,
-  meta: {
-    upgrades: {},
-    effects: {},
-  },
-})
-
-const containerStyle: React.CSSProperties = {
+const containerStyle: CSSProperties = {
   maxWidth: 320,
   margin: '32px auto',
   padding: 16,
@@ -32,28 +25,28 @@ const containerStyle: React.CSSProperties = {
   gap: 16,
 }
 
-const statsListStyle: React.CSSProperties = {
+const statsListStyle: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
   gap: 8,
 }
 
-const buttonRowStyle: React.CSSProperties = {
+const buttonRowStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
 }
 
-const buttonStyle: React.CSSProperties = {
+const buttonStyle: CSSProperties = {
   padding: '8px 12px',
 }
 
-const shopToggleStyle: React.CSSProperties = {
+const shopToggleStyle: CSSProperties = {
   ...buttonStyle,
   alignSelf: 'flex-start',
 }
 
-const shopPanelStyle: React.CSSProperties = {
+const shopPanelStyle: CSSProperties = {
   border: '1px solid #ddd',
   borderRadius: 8,
   padding: 12,
@@ -62,7 +55,7 @@ const shopPanelStyle: React.CSSProperties = {
   gap: 12,
 }
 
-const shopItemStyle: React.CSSProperties = {
+const shopItemStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 4,
@@ -70,7 +63,7 @@ const shopItemStyle: React.CSSProperties = {
   paddingBottom: 8,
 }
 
-const actions: { id: GameAction; label: string }[] = [
+const actions: { id: GameActionType; label: string }[] = [
   { id: 'TRAIN', label: 'Train' },
   { id: 'WORK', label: 'Work' },
   { id: 'REST', label: 'Rest' },
@@ -86,12 +79,15 @@ const Game = () => {
     rngRef.current = createRng(Date.now())
   }
 
+  const outcome = useMemo(() => getOutcome(state), [state])
+
   useEffect(() => {
     const restored = loadState()
     if (restored) {
       setState(restored)
       setPendingEvent(null)
       setShowShop(false)
+      rngRef.current = createRng(Date.now())
     }
   }, [])
 
@@ -109,46 +105,41 @@ const Game = () => {
     }
   }, [state])
 
-  const handleAction = (action: GameAction) => {
-    setState(current => applyAction(current, action))
+  const handleAction = (actionType: GameActionType) => {
+    if (pendingEvent || outcome.status !== 'ongoing') {
+      return
+    }
+
+    setState(current => applyAction(current, { type: actionType }))
   }
 
   const handleNextDay = () => {
+    if (pendingEvent || outcome.status !== 'ongoing') {
+      return
+    }
+
     setState(current => {
-      let nextDay = current.day + 1
-      let nextWeek = current.week
+      const advanced = advanceDay(current)
+      const nextOutcome = getOutcome(advanced)
 
-      if (nextDay > 7) {
-        nextDay = 1
-        nextWeek += 1
-      }
-
-      const updated: GameState = {
-        ...current,
-        day: nextDay,
-        week: nextWeek,
-        energy: current.maxEnergy,
-        error: undefined,
-      }
-
-      const withPassives = applyDailyPassives(updated)
-
-      const rng = rngRef.current
-      if (withPassives.day !== 1 && rng) {
-        const roll = rng()
-        if (roll < 0.35) {
-          const event = pickEvent(withPassives, rng)
+      if (nextOutcome.status === 'ongoing') {
+        const rng = rngRef.current
+        if (advanced.day !== 1 && rng && rng() < 0.35) {
+          const event = pickEvent(advanced, rng)
           if (event) {
             setPendingEvent(event)
           }
         }
       }
 
-      return withPassives
+      return advanced
     })
   }
 
   const handleUpgradePurchase = (id: string) => {
+    if (outcome.status !== 'ongoing') {
+      return
+    }
     setState(current => applyUpgrade(current, id))
   }
 
@@ -183,6 +174,7 @@ const Game = () => {
       setPendingEvent(null)
     }
     setShowShop(false)
+    rngRef.current = createRng(Date.now())
   }
 
   const handleNewRun = () => {
@@ -190,6 +182,7 @@ const Game = () => {
     setState(createInitialState())
     setPendingEvent(null)
     setShowShop(false)
+    rngRef.current = createRng(Date.now())
   }
 
   return (
@@ -228,7 +221,7 @@ const Game = () => {
             type="button"
             style={buttonStyle}
             onClick={() => handleAction(action.id)}
-            disabled={Boolean(pendingEvent)}
+            disabled={Boolean(pendingEvent) || outcome.status !== 'ongoing'}
           >
             {action.label}
           </button>
@@ -247,13 +240,21 @@ const Game = () => {
         <div style={shopPanelStyle}>
           <strong>Upgrades</strong>
           {UPGRADES.map(upgrade => {
-            const level = state.meta?.upgrades?.[upgrade.id] ?? 0
-            const maxLevel = upgrade.repeatable ? upgrade.maxLevel ?? Infinity : upgrade.maxLevel ?? 1
+            const level = state.meta.upgrades[upgrade.id] ?? 0
+            const maxLevel = upgrade.repeatable
+              ? upgrade.maxLevel ?? Infinity
+              : upgrade.maxLevel ?? 1
             const atMax = level >= maxLevel
             const cost = upgrade.cost
             return (
               <div key={upgrade.id} style={shopItemStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
                   <span>{upgrade.name}</span>
                   <span>${cost}</span>
                 </div>
@@ -266,7 +267,7 @@ const Game = () => {
                   type="button"
                   style={buttonStyle}
                   onClick={() => handleUpgradePurchase(upgrade.id)}
-                  disabled={state.money < cost || atMax}
+                  disabled={state.money < cost || atMax || outcome.status !== 'ongoing'}
                 >
                   {atMax ? 'Maxed' : 'Buy'}
                 </button>
@@ -280,10 +281,21 @@ const Game = () => {
         type="button"
         style={buttonStyle}
         onClick={handleNextDay}
-        disabled={Boolean(pendingEvent)}
+        disabled={Boolean(pendingEvent) || outcome.status !== 'ongoing'}
       >
         Next Day
       </button>
+
+      <div>Goals Completed: {state.meta.goalsCompleted.length} / {GOAL_TARGET}</div>
+
+      {outcome.status === 'won' ? (
+        <div style={{ color: 'green', fontWeight: 600 }}>You achieved your goals!</div>
+      ) : null}
+      {outcome.status === 'lost' ? (
+        <div style={{ color: 'crimson', fontWeight: 600 }}>
+          Run ended due to {outcome.loseReason === 'morale' ? 'morale' : 'money'}.
+        </div>
+      ) : null}
 
       {pendingEvent ? (
         <EventModal event={pendingEvent} onChoose={handleEventChoice} />

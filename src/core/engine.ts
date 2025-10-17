@@ -1,8 +1,35 @@
-export type GameAction = 'TRAIN' | 'WORK' | 'REST'
+import { evaluateGoals } from './goals'
+
+export type GameActionType = 'TRAIN' | 'WORK' | 'REST'
+
+export type GameAction = { type: GameActionType }
+
+export type LoseReason = 'morale' | 'money'
+
+export type GameOutcome =
+  | { status: 'ongoing' }
+  | { status: 'won' }
+  | { status: 'lost'; loseReason: LoseReason }
+
+export interface GameMetaEffects {
+  energyCostDelta?: number
+  restMoraleBonus?: number
+  dailyIncome?: number
+  dailyMorale?: number
+}
+
+export interface GameMetaCounters {
+  trainsThisWeek: number
+  daysFullEnergy: number
+  zeroMoneyStreak: number
+  lowMoraleStreak: number
+}
 
 export interface GameMeta {
-  upgrades?: Record<string, number>
-  effects?: Record<string, any>
+  upgrades: Record<string, number>
+  effects: GameMetaEffects
+  counters: GameMetaCounters
+  goalsCompleted: string[]
 }
 
 export interface GameState {
@@ -14,7 +41,7 @@ export interface GameState {
   skill: number
   money: number
   error?: string
-  meta?: GameMeta
+  meta: GameMeta
 }
 
 type ActionEffect = {
@@ -25,55 +52,145 @@ type ActionEffect = {
   energyGain?: number
 }
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max)
-
-const ACTIONS: Record<GameAction, ActionEffect> = {
+const ACTION_CONFIG: Record<GameActionType, ActionEffect> = {
   TRAIN: { cost: 3, skill: 2 },
   WORK: { cost: 2, money: 5 },
   REST: { cost: 0, morale: 1, energyGain: 2 },
 }
 
-export function applyAction(state: GameState, action: GameAction): GameState {
-  const config = ACTIONS[action]
+const clampNonNegative = (value: number): number => Math.max(0, value)
 
+const cloneMeta = (meta?: GameMeta): GameMeta => ({
+  upgrades: { ...(meta?.upgrades ?? {}) },
+  effects: { ...(meta?.effects ?? {}) },
+  counters: {
+    trainsThisWeek: meta?.counters?.trainsThisWeek ?? 0,
+    daysFullEnergy: meta?.counters?.daysFullEnergy ?? 0,
+    zeroMoneyStreak: meta?.counters?.zeroMoneyStreak ?? 0,
+    lowMoraleStreak: meta?.counters?.lowMoraleStreak ?? 0,
+  },
+  goalsCompleted: [...(meta?.goalsCompleted ?? [])],
+})
+
+export const createInitialState = (): GameState => ({
+  day: 1,
+  week: 1,
+  energy: 6,
+  maxEnergy: 6,
+  morale: 5,
+  skill: 0,
+  money: 10,
+  meta: {
+    upgrades: {},
+    effects: {},
+    counters: {
+      trainsThisWeek: 0,
+      daysFullEnergy: 0,
+      zeroMoneyStreak: 0,
+      lowMoraleStreak: 0,
+    },
+    goalsCompleted: [],
+  },
+})
+
+export const clampState = (state: GameState): GameState => {
+  const meta = cloneMeta(state.meta)
+
+  return {
+    ...state,
+    energy: Math.min(Math.max(0, state.energy), state.maxEnergy),
+    morale: clampNonNegative(state.morale),
+    skill: clampNonNegative(state.skill),
+    money: clampNonNegative(state.money),
+    meta,
+    error: undefined,
+  }
+}
+
+export const applyAction = (state: GameState, action: GameAction): GameState => {
+  const config = ACTION_CONFIG[action.type]
   if (!config) {
-    return state
+    return clampState(state)
   }
 
-  const effects = state.meta?.effects ?? {}
-  const costReduction = effects.energyCostReduction ?? 0
-  const adjustedCost = Math.max(0, config.cost - costReduction)
+  const meta = cloneMeta(state.meta)
+  const effects = meta.effects
+  const baseCost = config.cost
+  const effectiveCost = Math.max(0, baseCost + (effects.energyCostDelta ?? 0))
 
-  if (state.energy < adjustedCost) {
+  if (state.energy < effectiveCost) {
     return {
-      ...state,
+      ...clampState(state),
       error: 'Not enough energy for that action.',
     }
   }
 
-  const moraleBonus = action === 'REST' ? effects.restMoraleBonus ?? 0 : 0
+  const restMoraleBonus = action.type === 'REST' ? effects.restMoraleBonus ?? 0 : 0
 
-  const nextEnergy = clamp(
-    state.energy - adjustedCost + (config.energyGain ?? 0),
-    0,
-    state.maxEnergy,
-  )
-
-  const nextMorale = clamp(
-    state.morale + (config.morale ?? 0) + moraleBonus,
-    0,
-    Number.POSITIVE_INFINITY,
-  )
-  const nextSkill = clamp(state.skill + (config.skill ?? 0), 0, Number.POSITIVE_INFINITY)
-  const nextMoney = Math.max(0, state.money + (config.money ?? 0))
-
-  return {
+  const nextState: GameState = {
     ...state,
-    energy: nextEnergy,
-    morale: nextMorale,
-    skill: nextSkill,
-    money: nextMoney,
+    energy: state.energy - effectiveCost + (config.energyGain ?? 0),
+    morale: state.morale + (config.morale ?? 0) + restMoraleBonus,
+    skill: state.skill + (config.skill ?? 0),
+    money: state.money + (config.money ?? 0),
+    meta: {
+      ...meta,
+      counters: {
+        ...meta.counters,
+        trainsThisWeek:
+          action.type === 'TRAIN'
+            ? meta.counters.trainsThisWeek + 1
+            : meta.counters.trainsThisWeek,
+      },
+    },
     error: undefined,
   }
+
+  return clampState(nextState)
+}
+
+export const advanceDay = (state: GameState): GameState => {
+  const previous = clampState(state)
+  const meta = cloneMeta(previous.meta)
+
+  let nextDay = previous.day + 1
+  let nextWeek = previous.week
+  let trainsThisWeek = meta.counters.trainsThisWeek
+
+  if (nextDay > 7) {
+    nextDay = 1
+    nextWeek += 1
+    trainsThisWeek = 0
+  }
+
+  const wasFullEnergy = previous.energy >= previous.maxEnergy
+  const zeroMoney = previous.money <= 0
+  const lowMorale = previous.morale <= 0
+
+  const counters: GameMetaCounters = {
+    trainsThisWeek,
+    daysFullEnergy: wasFullEnergy ? meta.counters.daysFullEnergy + 1 : 0,
+    zeroMoneyStreak: zeroMoney ? meta.counters.zeroMoneyStreak + 1 : 0,
+    lowMoraleStreak: lowMorale ? meta.counters.lowMoraleStreak + 1 : 0,
+  }
+
+  const dailyIncome = meta.effects.dailyIncome ?? 0
+  const dailyMorale = meta.effects.dailyMorale ?? 0
+
+  const nextState: GameState = {
+    ...previous,
+    day: nextDay,
+    week: nextWeek,
+    energy: previous.maxEnergy,
+    morale: previous.morale + dailyMorale,
+    money: previous.money + dailyIncome,
+    meta: {
+      ...meta,
+      counters,
+    },
+    error: undefined,
+  }
+
+  const evaluated = evaluateGoals(previous, nextState)
+  return clampState(evaluated)
 }
