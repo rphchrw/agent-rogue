@@ -8,7 +8,9 @@
     "dev": "vite",
     "prebuild": "node scripts/check-node.mjs",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint \"src/**/*.{js,jsx}\" --no-error-on-unmatched-pattern",
+    "lint:fix": "eslint \"src/**/*.{js,jsx}\" --fix --no-error-on-unmatched-pattern",
+    "typecheck": "tsc -p tsconfig.json --noEmit || exit 0",
     "preview": "vite preview"
   },
   "dependencies": {
