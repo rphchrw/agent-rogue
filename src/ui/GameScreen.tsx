@@ -1,12 +1,42 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import { advancePhase, initGame, nextDay } from '../game/engine'
-import type { GameState } from '../game/models'
+import { starterDeck } from '../game/cards'
+import { advancePhase, discard, draw, initGame, nextDay } from '../game/engine'
+import { applyEffect } from '../game/effects'
+import type { Card, GameState } from '../game/models'
 
-const createInitialState = (): GameState => initGame(Date.now())
+const createInitialState = (): GameState => {
+  const base = initGame(Date.now())
+  const deck = starterDeck()
+
+  return {
+    ...base,
+    deck,
+    hand: [] as Card[],
+    discard: [] as Card[],
+  }
+}
+
+const getPrimaryEffectId = (card: Card): string => {
+  const candidate = card as Card & { effects?: { id?: string }[] }
+  const [firstEffect] = Array.isArray(candidate.effects) ? candidate.effects : []
+  return firstEffect?.id ?? 'noop'
+}
 
 const GameScreen = () => {
-  const [state, setState] = useState<GameState>(() => createInitialState())
+  const [state, setState] = useState<GameState>(createInitialState)
+
+  useEffect(() => {
+    if (state.phase === 'draw' && state.hand.length < 5) {
+      setState((current) => {
+        if (current.phase !== 'draw' || current.hand.length >= 5) {
+          return current
+        }
+
+        return draw(current, 5)
+      })
+    }
+  }, [state.phase, state.hand.length])
 
   const handleAdvancePhase = () => {
     setState((current) => advancePhase(current))
@@ -18,6 +48,21 @@ const GameScreen = () => {
 
   const handleNewGame = () => {
     setState(createInitialState())
+  }
+
+  const handlePlayCard = (cardId: string) => {
+    setState((current) => {
+      const card = current.hand.find((item) => item.id === cardId)
+
+      if (!card) {
+        return current
+      }
+
+      const effectId = getPrimaryEffectId(card)
+      const { state: afterEffect } = applyEffect(current, cardId, effectId)
+
+      return discard(afterEffect, cardId)
+    })
   }
 
   return (
@@ -56,6 +101,24 @@ const GameScreen = () => {
             <strong>Reputation:</strong> {state.reputation}
           </li>
         </ul>
+      </section>
+
+      <section className="game-screen__hand">
+        <h2>Hand</h2>
+        {state.hand.length === 0 ? (
+          <p>Hand is empty.</p>
+        ) : (
+          <ul>
+            {state.hand.map((card) => (
+              <li key={card.id}>
+                <span>{card.name ?? card.id}</span>{' '}
+                <button type="button" onClick={() => handlePlayCard(card.id)}>
+                  Play
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="game-screen__log">
