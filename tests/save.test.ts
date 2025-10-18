@@ -86,4 +86,30 @@ describe('save system', () => {
 
     expect(loadState()).toBeNull()
   })
+
+  it('clamps negative energy values from tampered saves', () => {
+    const storage = globalThis.localStorage as MockStorage
+    storage.setItem(
+      'agent-rogue',
+      JSON.stringify({
+        day: 1,
+        week: 1,
+        energy: -10,
+        maxEnergy: -5,
+        morale: 3,
+        skill: 2,
+        money: 5,
+        meta: {
+          upgrades: {},
+          effects: {},
+        },
+      }),
+    )
+
+    const loaded = loadState()
+
+    expect(loaded).not.toBeNull()
+    expect(loaded?.maxEnergy).toBe(1)
+    expect(loaded?.energy).toBe(0)
+  })
 })
