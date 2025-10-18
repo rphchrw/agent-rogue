@@ -77,11 +77,13 @@ const sanitizeState = (value: unknown): GameState | null => {
         effects: {},
       }
 
+  const safeMaxEnergy = Math.max(1, maxEnergy)
+
   const next: GameState = {
     day,
     week,
-    energy: Math.max(0, Math.min(energy, maxEnergy)),
-    maxEnergy,
+    energy: Math.max(0, Math.min(energy, safeMaxEnergy)),
+    maxEnergy: safeMaxEnergy,
     morale: Math.max(0, morale),
     skill: Math.max(0, skill),
     money: Math.max(0, money),

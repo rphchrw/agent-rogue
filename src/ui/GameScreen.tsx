@@ -33,7 +33,12 @@ const GameScreen = () => {
           return current
         }
 
-        return draw(current, 5)
+        const missingCards = Math.max(0, 5 - current.hand.length)
+        if (missingCards === 0) {
+          return current
+        }
+
+        return draw(current, missingCards)
       })
     }
   }, [state.phase, state.hand.length])
