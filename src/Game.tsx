@@ -6,20 +6,36 @@ import EventModal from './ui/EventModal'
 import { createRng } from './core/rng'
 import { UPGRADES, applyDailyPassives, applyUpgrade } from './core/upgrades'
 import { clearSave, loadState, saveState } from './core/save'
+import { GoalManager } from './systems/goals/GoalManager'
+import { MilestoneManager } from './systems/goals/MilestoneManager'
+import { EXAMPLE_GOALS, EXAMPLE_MILESTONES } from './systems/goals/sampleData'
 
-const createInitialState = (): GameState => ({
-  day: 1,
-  week: 1,
-  energy: 6,
-  maxEnergy: 6,
-  morale: 5,
-  skill: 0,
-  money: 10,
-  meta: {
-    upgrades: {},
-    effects: {},
-  },
-})
+const initialiseProgression = (state: GameState): GameState => {
+  const goalManager = GoalManager.fromGameState(state)
+  goalManager.seedGoals(EXAMPLE_GOALS)
+  let result = goalManager.applyToGameState(state)
+
+  const milestoneManager = MilestoneManager.fromGameState(result)
+  milestoneManager.seedMilestones(EXAMPLE_MILESTONES)
+  result = milestoneManager.applyToGameState(result)
+
+  return result
+}
+
+const createInitialState = (): GameState =>
+  initialiseProgression({
+    day: 1,
+    week: 1,
+    energy: 6,
+    maxEnergy: 6,
+    morale: 5,
+    skill: 0,
+    money: 10,
+    meta: {
+      upgrades: {},
+      effects: {},
+    },
+  })
 
 const containerStyle: React.CSSProperties = {
   maxWidth: 320,
@@ -70,6 +86,45 @@ const shopItemStyle: React.CSSProperties = {
   paddingBottom: 8,
 }
 
+const infoPanelStyle: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 8,
+  padding: 12,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+}
+
+const panelHeadingStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 18,
+}
+
+const goalListStyle: React.CSSProperties = {
+  listStyle: 'none',
+  margin: 0,
+  padding: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+}
+
+const goalItemStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+}
+
+const goalMetaStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: '#555',
+}
+
+const placeholderTextStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: '#777',
+}
+
 const actions: { id: GameAction; label: string }[] = [
   { id: 'TRAIN', label: 'Train' },
   { id: 'WORK', label: 'Work' },
@@ -89,7 +144,7 @@ const Game = () => {
   useEffect(() => {
     const restored = loadState()
     if (restored) {
-      setState(restored)
+      setState(initialiseProgression(restored))
       setPendingEvent(null)
       setShowShop(false)
     }
@@ -110,7 +165,62 @@ const Game = () => {
   }, [state])
 
   const handleAction = (action: GameAction) => {
-    setState(current => applyAction(current, action))
+    setState(current => {
+      const afterAction = applyAction(current, action)
+
+      if (afterAction === current) {
+        return current
+      }
+
+      const goalManager = GoalManager.fromGameState(afterAction)
+      goalManager.seedGoals(EXAMPLE_GOALS)
+
+      const progressNotes: string[] = []
+      const moneyDelta = afterAction.money - current.money
+      if (moneyDelta > 0) {
+        const updatedWeekly = goalManager.updateGoalProgress('weekly-earn-money', moneyDelta)
+        if (updatedWeekly) {
+          progressNotes.push(
+            `${updatedWeekly.title}: ${Math.min(updatedWeekly.progress, updatedWeekly.target)} / ${updatedWeekly.target}`,
+          )
+        }
+      }
+
+      const storyGoal = goalManager.getGoalById('story-first-client')
+      if (storyGoal && !storyGoal.completed && storyGoal.progress < storyGoal.target) {
+        if (afterAction.skill >= 4 && afterAction.money >= 20) {
+          const updatedStory = goalManager.updateGoalProgress('story-first-client', 1)
+          if (updatedStory) {
+            progressNotes.push(
+              `${updatedStory.title}: ${Math.min(updatedStory.progress, updatedStory.target)} / ${updatedStory.target}`,
+            )
+          }
+        }
+      }
+
+      if (progressNotes.length > 0) {
+        console.log('[Goals] Progress update:', progressNotes.join(' | '))
+      }
+
+      const newlyCompleted = goalManager.checkCompletion()
+      if (newlyCompleted.length > 0) {
+        console.log('[Goals] Completed:', newlyCompleted.map(goal => goal.title).join(', '))
+      }
+
+      const goalsState = goalManager.getState()
+      let updated = goalManager.applyToGameState(afterAction)
+
+      const milestoneManager = MilestoneManager.fromGameState(updated)
+      milestoneManager.seedMilestones(EXAMPLE_MILESTONES)
+      const unlocked = milestoneManager.evaluateFromGoals(goalsState)
+      if (unlocked.length > 0) {
+        console.log('[Milestones] Unlocked:', unlocked.map(entry => entry.title).join(', '))
+      }
+
+      updated = milestoneManager.applyToGameState(updated)
+
+      return updated
+    })
   }
 
   const handleNextDay = () => {
@@ -123,7 +233,7 @@ const Game = () => {
         nextWeek += 1
       }
 
-      const updated: GameState = {
+      let updated: GameState = {
         ...current,
         day: nextDay,
         week: nextWeek,
@@ -131,20 +241,63 @@ const Game = () => {
         error: undefined,
       }
 
-      const withPassives = applyDailyPassives(updated)
+      updated = applyDailyPassives(updated)
+
+      const goalManager = GoalManager.fromGameState(updated)
+      goalManager.seedGoals(EXAMPLE_GOALS)
+
+      const progressLogs: string[] = []
+      const snapshot = goalManager.getState()
+      for (const goal of snapshot.active) {
+        if (goal.type === 'daily' && !goal.completed) {
+          const updatedGoal = goalManager.updateGoalProgress(goal.id, 1)
+          if (updatedGoal) {
+            progressLogs.push(
+              `${updatedGoal.title}: ${Math.min(updatedGoal.progress, updatedGoal.target)} / ${updatedGoal.target}`,
+            )
+          }
+        }
+      }
+
+      if (progressLogs.length > 0) {
+        console.log('[Goals] Daily progress after advancing day:', progressLogs.join(' | '))
+      }
+
+      const newlyCompleted = goalManager.checkCompletion()
+      if (newlyCompleted.length > 0) {
+        console.log(
+          '[Goals] Completed:',
+          newlyCompleted.map(goal => goal.title).join(', '),
+        )
+      }
+
+      const goalsState = goalManager.getState()
+      updated = goalManager.applyToGameState(updated)
+
+      const milestoneManager = MilestoneManager.fromGameState(updated)
+      milestoneManager.seedMilestones(EXAMPLE_MILESTONES)
+      const unlocked = milestoneManager.evaluateFromGoals(goalsState)
+      if (unlocked.length > 0) {
+        console.log(
+          '[Milestones] Unlocked:',
+          unlocked.map(entry => entry.title).join(', '),
+        )
+      }
+
+      updated = milestoneManager.applyToGameState(updated)
 
       const rng = rngRef.current
-      if (withPassives.day !== 1 && rng) {
+      if (updated.day !== 1 && rng) {
         const roll = rng()
         if (roll < 0.35) {
-          const event = pickEvent(withPassives, rng)
+          const event = pickEvent(updated, rng)
           if (event) {
             setPendingEvent(event)
           }
         }
       }
 
-      return withPassives
+      return updated
     })
   }
 
@@ -176,7 +329,7 @@ const Game = () => {
   const handleLoad = () => {
     const restored = loadState()
     if (restored) {
-      setState(restored)
+      setState(initialiseProgression(restored))
       setPendingEvent(null)
     } else {
       setState(createInitialState())
@@ -191,6 +344,11 @@ const Game = () => {
     setPendingEvent(null)
     setShowShop(false)
   }
+
+  const goalsState = state.meta?.goals ?? { active: [], completed: [] }
+  const activeGoals = goalsState.active ?? []
+  const completedGoals = goalsState.completed ?? []
+  const milestoneEntries = state.meta?.milestones?.entries ?? []
 
   return (
     <div style={containerStyle}>
@@ -208,6 +366,59 @@ const Game = () => {
       </div>
 
       {state.error ? <div style={{ color: 'crimson' }}>{state.error}</div> : null}
+
+      <div style={infoPanelStyle}>
+        <h2 style={panelHeadingStyle}>Goals</h2>
+        {activeGoals.length > 0 ? (
+          <ul style={goalListStyle}>
+            {activeGoals.map(goal => (
+              <li key={goal.id} style={goalItemStyle}>
+                <strong>{goal.title}</strong>
+                <span style={goalMetaStyle}>{goal.description}</span>
+                <span style={goalMetaStyle}>
+                  Progress: {Math.min(goal.progress, goal.target)} / {goal.target}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p style={placeholderTextStyle}>No active goals yet.</p>
+        )}
+        {completedGoals.length > 0 ? (
+          <details>
+            <summary style={{ cursor: 'pointer', fontSize: 12 }}>
+              Completed goals ({completedGoals.length})
+            </summary>
+            <ul style={goalListStyle}>
+              {completedGoals.map(goal => (
+                <li key={goal.id} style={goalItemStyle}>
+                  <strong>{goal.title}</strong>
+                  <span style={goalMetaStyle}>Finished and archived.</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </div>
+
+      <div style={infoPanelStyle}>
+        <h2 style={panelHeadingStyle}>Milestones</h2>
+        {milestoneEntries.length > 0 ? (
+          <ul style={goalListStyle}>
+            {milestoneEntries.map(milestone => (
+              <li key={milestone.id} style={goalItemStyle}>
+                <strong>{milestone.title}</strong>
+                <span style={goalMetaStyle}>{milestone.description}</span>
+                <span style={goalMetaStyle}>
+                  Status: {milestone.unlocked ? 'Unlocked' : 'Locked'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p style={placeholderTextStyle}>No milestones tracked yet.</p>
+        )}
+      </div>
 
       <div style={buttonRowStyle}>
         <button type="button" style={buttonStyle} onClick={handleSaveNow}>

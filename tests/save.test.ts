@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { clearSave, loadState, saveState } from '../src/core/save'
+import { extractSave, SAVE_KEY } from '../src/systems/save/serialize'
 import type { GameState } from '../src/core/engine'
 
 class MockStorage implements Storage {
@@ -38,6 +39,37 @@ describe('save system', () => {
     clearSave()
   })
 
+  const expectStableSnapshot = (original: GameState, restored: GameState | null) => {
+    expect(restored).not.toBeNull()
+
+    if (!restored) {
+      return
+    }
+
+    const expected = extractSave(original)
+    const actual = extractSave(restored)
+
+    try {
+      expect(actual).toEqual(expected)
+    } catch (error) {
+      if (process.env.NODE_ENV === 'test') {
+        const keys = Array.from(
+          new Set<string>([...Object.keys(expected), ...Object.keys(actual)]),
+        ).sort()
+        console.log('[save-test] stable snapshot diff detected:')
+        for (const key of keys) {
+          const exp = JSON.stringify((expected as any)[key])
+          const act = JSON.stringify((actual as any)[key])
+          if (exp !== act) {
+            console.log(`  ${key}: expected=${exp} actual=${act}`)
+          }
+        }
+      }
+
+      throw error
+    }
+  }
+
   it('persists and restores game state', () => {
     const state: GameState = {
       day: 3,
@@ -60,29 +92,19 @@ describe('save system', () => {
     saveState(state)
     const loaded = loadState()
 
-    expect(loaded).toEqual({
-      ...state,
-      meta: {
-        upgrades: {
-          booster: 2,
-        },
-        effects: {
-          energyCostReduction: 1,
-        },
-      },
-    })
+    expectStableSnapshot(state, loaded)
   })
 
   it('returns null when saved data is corrupted', () => {
     const storage = globalThis.localStorage as MockStorage
-    storage.setItem('agent-rogue', '{not-valid')
+    storage.setItem(SAVE_KEY, '{not-valid')
 
     expect(loadState()).toBeNull()
   })
 
   it('returns null when saved data shape is invalid', () => {
     const storage = globalThis.localStorage as MockStorage
-    storage.setItem('agent-rogue', JSON.stringify({ foo: 'bar' }))
+    storage.setItem(SAVE_KEY, JSON.stringify({ foo: 'bar' }))
 
     expect(loadState()).toBeNull()
   })
@@ -90,7 +112,7 @@ describe('save system', () => {
   it('clamps negative energy values from tampered saves', () => {
     const storage = globalThis.localStorage as MockStorage
     storage.setItem(
-      'agent-rogue',
+      SAVE_KEY,
       JSON.stringify({
         day: 1,
         week: 1,
