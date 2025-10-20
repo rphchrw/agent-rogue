@@ -1,4 +1,4 @@
-import type { GameState } from './engine'
+import type { GameMetaCounters, GameState } from './engine'
 
 export type Upgrade = {
   id: string
@@ -10,12 +10,27 @@ export type Upgrade = {
   apply(state: GameState): GameState
 }
 
-type MetaShape = Required<NonNullable<GameState['meta']>>
-
-const ensureMeta = (state: GameState): MetaShape => ({
-  upgrades: { ...(state.meta?.upgrades ?? {}) },
-  effects: { ...(state.meta?.effects ?? {}) },
+const defaultCounters = (): GameMetaCounters => ({
+  trainsThisWeek: 0,
+  daysFullEnergy: 0,
+  zeroMoneyStreak: 0,
+  lowMoraleStreak: 0,
 })
+
+const ensureMeta = (state: GameState): GameState['meta'] => {
+  const counters = state.meta?.counters ?? defaultCounters()
+  return {
+    upgrades: { ...(state.meta?.upgrades ?? {}) },
+    effects: { ...(state.meta?.effects ?? {}) },
+    counters: {
+      trainsThisWeek: counters.trainsThisWeek ?? 0,
+      daysFullEnergy: counters.daysFullEnergy ?? 0,
+      zeroMoneyStreak: counters.zeroMoneyStreak ?? 0,
+      lowMoraleStreak: counters.lowMoraleStreak ?? 0,
+    },
+    goalsCompleted: [...(state.meta?.goalsCompleted ?? [])],
+  }
+}
 
 const clampNonNegative = (value: number): number => Math.max(0, value)
 
@@ -44,8 +59,8 @@ export const UPGRADES: Upgrade[] = [
     cost: 15,
     apply(state) {
       const meta = ensureMeta(state)
-      const current = meta.effects.ergonomicChair ?? 0
-      meta.effects.ergonomicChair = current + 1
+      const current = meta.effects.dailyMorale ?? 0
+      meta.effects.dailyMorale = current + 1
       return {
         ...state,
         meta,
@@ -75,10 +90,8 @@ export const UPGRADES: Upgrade[] = [
     cost: 20,
     apply(state) {
       const meta = ensureMeta(state)
-      meta.effects.energyCostReduction = Math.min(
-        (meta.effects.energyCostReduction ?? 0) + 1,
-        3,
-      )
+      const nextDelta = (meta.effects.energyCostDelta ?? 0) - 1
+      meta.effects.energyCostDelta = Math.max(nextDelta, -3)
       return {
         ...state,
         meta,
@@ -92,8 +105,8 @@ export const UPGRADES: Upgrade[] = [
     cost: 18,
     apply(state) {
       const meta = ensureMeta(state)
-      const current = meta.effects.sideHustle ?? 0
-      meta.effects.sideHustle = current + 2
+      const current = meta.effects.dailyIncome ?? 0
+      meta.effects.dailyIncome = current + 2
       return {
         ...state,
         meta,
@@ -167,15 +180,3 @@ export const applyUpgrade = (state: GameState, id: string): GameState => {
   }
 }
 
-export const applyDailyPassives = (state: GameState): GameState => {
-  const meta = ensureMeta(state)
-  const sideHustleBonus = meta.effects.sideHustle ?? 0
-  const moraleBonus = meta.effects.ergonomicChair ?? 0
-
-  return {
-    ...state,
-    money: clampNonNegative(state.money + sideHustleBonus),
-    morale: clampNonNegative(state.morale + moraleBonus),
-    meta,
-  }
-}
