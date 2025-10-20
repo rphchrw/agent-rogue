@@ -40,7 +40,6 @@ const applyDelta = (state: GameState, delta: StatDelta): GameState => {
     morale: nextMorale,
     skill: nextSkill,
     money: nextMoney,
-    error: undefined,
   }
 }
 
