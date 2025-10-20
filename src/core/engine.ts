@@ -1,8 +1,12 @@
+import type { GoalsState, MilestonesState } from '../systems/goals/types'
+
 export type GameAction = 'TRAIN' | 'WORK' | 'REST'
 
 export interface GameMeta {
   upgrades?: Record<string, number>
   effects?: Record<string, any>
+  goals?: GoalsState
+  milestones?: MilestonesState
 }
 
 export interface GameState {

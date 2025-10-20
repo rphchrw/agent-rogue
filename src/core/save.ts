@@ -1,4 +1,10 @@
 import { type GameState } from './engine'
+import {
+  createEmptyGoalsState,
+  createEmptyMilestonesState,
+  sanitizeGoalsState,
+  sanitizeMilestonesState,
+} from '../systems/goals/types'
 
 const STORAGE_KEY = 'agent-rogue'
 
@@ -71,10 +77,14 @@ const sanitizeState = (value: unknown): GameState | null => {
     ? {
         upgrades: sanitizeUpgrades(metaRaw.upgrades),
         effects: sanitizeEffects(metaRaw.effects),
+        goals: sanitizeGoalsState(metaRaw.goals),
+        milestones: sanitizeMilestonesState(metaRaw.milestones),
       }
     : {
         upgrades: {},
         effects: {},
+        goals: createEmptyGoalsState(),
+        milestones: createEmptyMilestonesState(),
       }
 
   const safeMaxEnergy = Math.max(1, maxEnergy)

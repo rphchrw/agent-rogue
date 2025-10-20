@@ -1,4 +1,10 @@
 import type { GameState } from './engine'
+import {
+  cloneGoalsState,
+  cloneMilestonesState,
+  type GoalsState,
+  type MilestonesState,
+} from '../systems/goals/types'
 
 export type Upgrade = {
   id: string
@@ -10,11 +16,18 @@ export type Upgrade = {
   apply(state: GameState): GameState
 }
 
-type MetaShape = Required<NonNullable<GameState['meta']>>
+type MetaShape = {
+  upgrades: Record<string, number>
+  effects: Record<string, any>
+  goals: GoalsState
+  milestones: MilestonesState
+}
 
 const ensureMeta = (state: GameState): MetaShape => ({
   upgrades: { ...(state.meta?.upgrades ?? {}) },
   effects: { ...(state.meta?.effects ?? {}) },
+  goals: cloneGoalsState(state.meta?.goals),
+  milestones: cloneMilestonesState(state.meta?.milestones),
 })
 
 const clampNonNegative = (value: number): number => Math.max(0, value)
